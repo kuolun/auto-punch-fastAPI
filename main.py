@@ -24,7 +24,7 @@ app = FastAPI(
 )
 
 # 靜態檔案和模板
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # API 基礎網址
