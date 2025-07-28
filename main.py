@@ -139,6 +139,41 @@ def extract_fields(doc, today: str, user_id: str, punch_message: str):
     
     return payload
 
+def extract_fields_with_custom_log(doc, today: str, user_id: str, custom_log_content: str):
+    """從案件編輯頁面提取欄位資料並使用自定義log內容"""
+    field_ids = [
+        "f_key", "f_case_name", "f_person_id", "f_person2_id",
+        "f_event_date", "f_alert_date", "f_log", "f_note",
+        "f_to_do", "f_dir", "f_risk", "f_doc"
+    ]
+    
+    payload = {}
+    for fid in field_ids:
+        el = doc.find(id=fid)
+        if not el:
+            payload[fid] = ""
+        elif el.name == "input":
+            payload[fid] = el.get("value", "").strip()
+        elif el.name == "textarea":
+            payload[fid] = el.text.strip()
+        else:
+            payload[fid] = ""
+    
+    # 轉換 f_key 為整數
+    try:
+        payload["f_key"] = int(payload["f_key"])
+    except (ValueError, TypeError):
+        payload["f_key"] = 0
+    
+    # 直接使用自定義的工作日誌內容
+    payload["f_log"] = custom_log_content
+    
+    # 設定更新資訊
+    payload["f_update_date"] = today
+    payload["f_last_editor"] = user_id
+    
+    return payload
+
 async def submit_punch(payload):
     """提交打卡資料"""
     try:
@@ -194,15 +229,13 @@ async def fetch_cases(user_id: str = Form(...), password: str = Form(...)):
             content={"success": False, "message": f"系統錯誤: {str(e)}"}
         )
 
-@app.post("/api/batch-punch")
-async def batch_punch(
-    user_id: str = Form(...),
-    case_list: str = Form(...),
-    punch_message: str = Form(default="")
+@app.post("/api/fetch-case-details")
+async def fetch_case_details(
+    user_id: str = Form(...), 
+    case_list: str = Form(...)
 ):
-    """批量打卡"""
+    """抓取所有案件的詳細資料"""
     try:
-        # 解析案件清單
         case_keys = [k.strip() for k in case_list.split(",") if k.strip()]
         
         if not case_keys:
@@ -211,7 +244,100 @@ async def batch_punch(
                 content={"success": False, "message": "沒有有效的案件清單"}
             )
         
-        logger.info(f"Starting batch punch for {len(case_keys)} cases by user {user_id}")
+        logger.info(f"Fetching details for {len(case_keys)} cases by user {user_id}")
+        
+        case_details = []
+        
+        # 使用信號量限制並發數量
+        semaphore = asyncio.Semaphore(3)
+        
+        async def get_case_detail(case_key: str):
+            async with semaphore:
+                try:
+                    doc = await fetch_case_edit(case_key, case_list, user_id)
+                    if not doc:
+                        return {
+                            "case_key": case_key,
+                            "case_name": "無法取得",
+                            "current_log": "",
+                            "person_id": "",
+                            "error": "無法取得案件資料"
+                        }
+                    
+                    # 提取案件詳細資訊
+                    case_name_el = doc.find(id="f_case_name")
+                    case_name = case_name_el.get("value", "").strip() if case_name_el else "未知案件"
+                    
+                    log_el = doc.find(id="f_log")
+                    current_log = log_el.text.strip() if log_el else ""
+                    
+                    person_el = doc.find(id="f_person_id")
+                    person_id = person_el.get("value", "").strip() if person_el else ""
+                    
+                    f_key_el = doc.find(id="f_key")
+                    f_key = f_key_el.get("value", "").strip() if f_key_el else ""
+                    
+                    return {
+                        "case_key": case_key,
+                        "case_name": case_name,
+                        "current_log": current_log,
+                        "person_id": person_id,
+                        "f_key": f_key,
+                        "error": None
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error getting details for case {case_key}: {str(e)}")
+                    return {
+                        "case_key": case_key,
+                        "case_name": "錯誤",
+                        "current_log": "",
+                        "person_id": "",
+                        "error": str(e)
+                    }
+        
+        # 並發處理所有案件
+        tasks = [get_case_detail(case_key) for case_key in case_keys]
+        case_details = await asyncio.gather(*tasks)
+        
+        success_count = sum(1 for detail in case_details if detail["error"] is None)
+        
+        logger.info(f"Fetched details: {success_count}/{len(case_keys)} successful")
+        
+        return {
+            "success": True,
+            "case_details": case_details,
+            "total_count": len(case_keys),
+            "success_count": success_count,
+            "message": f"成功取得 {success_count}/{len(case_keys)} 個案件詳細資料"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in fetch_case_details: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"系統錯誤: {str(e)}"}
+        )
+
+@app.post("/api/batch-punch")
+async def batch_punch(
+    user_id: str = Form(...),
+    case_list: str = Form(...),
+    punch_data: str = Form(...)  # JSON 格式的案件打卡資料
+):
+    """批量打卡 - 支援個別案件自訂訊息"""
+    try:
+        # 解析打卡資料
+        import json
+        punch_info = json.loads(punch_data)
+        
+        if not punch_info or not isinstance(punch_info, list):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "無效的打卡資料格式"}
+            )
+        
+        logger.info(f"Starting batch punch for {len(punch_info)} cases by user {user_id}")
         
         # 執行批量打卡
         results = []
@@ -220,8 +346,11 @@ async def batch_punch(
         # 使用信號量限制並發數量
         semaphore = asyncio.Semaphore(3)
         
-        async def process_case(case_key: str):
+        async def process_case(case_info: dict):
             async with semaphore:
+                case_key = case_info.get("case_key")
+                edited_log_content = case_info.get("edited_log_content", "")
+                
                 try:
                     # 取得案件資料
                     doc = await fetch_case_edit(case_key, case_list, user_id)
@@ -232,8 +361,8 @@ async def batch_punch(
                             "message": "無法取得案件資料"
                         }
                     
-                    # 提取欄位資料
-                    payload = extract_fields(doc, today, user_id, punch_message)
+                    # 提取欄位資料並使用編輯後的log內容
+                    payload = extract_fields_with_custom_log(doc, today, user_id, edited_log_content)
                     case_name = payload.get('f_case_name', '未知')
                     
                     # 提交打卡資料
@@ -244,14 +373,15 @@ async def batch_punch(
                             "success": True,
                             "case_key": case_key,
                             "case_name": case_name,
-                            "message": f"案件 {case_name} 打卡成功"
+                            "message": f"案件 {case_name} 工作日誌更新成功",
+                            "log_content": edited_log_content[:50] + "..." if len(edited_log_content) > 50 else edited_log_content
                         }
                     else:
                         return {
                             "success": False,
                             "case_key": case_key,
                             "case_name": case_name,
-                            "message": f"案件 {case_name} 打卡失敗"
+                            "message": f"案件 {case_name} 工作日誌更新失敗"
                         }
                         
                 except Exception as e:
@@ -262,22 +392,27 @@ async def batch_punch(
                     }
         
         # 並發處理所有案件
-        tasks = [process_case(case_key) for case_key in case_keys]
+        tasks = [process_case(case_info) for case_info in punch_info]
         results = await asyncio.gather(*tasks)
         
         # 統計結果
         success_count = sum(1 for r in results if r.get("success", False))
         
-        logger.info(f"Batch punch completed: {success_count}/{len(case_keys)} successful")
+        logger.info(f"Batch punch completed: {success_count}/{len(punch_info)} successful")
         
         return {
             "success": True,
             "results": results,
-            "total_count": len(case_keys),
+            "total_count": len(punch_info),
             "success_count": success_count,
-            "message": f"批量打卡完成：{success_count}/{len(case_keys)} 成功"
+            "message": f"批量打卡完成：{success_count}/{len(punch_info)} 成功"
         }
         
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "打卡資料JSON格式錯誤"}
+        )
     except Exception as e:
         logger.error(f"Batch punch error: {str(e)}")
         return JSONResponse(
