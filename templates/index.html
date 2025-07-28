@@ -10,7 +10,7 @@
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0">
                     <i class="bi bi-robot"></i>
-                    自動打卡系統
+                    一鍵打卡
                 </h5>
             </div>
             <div class="card-body">
@@ -53,10 +53,14 @@
                     <button type="button" class="btn btn-outline-primary" id="fetchCasesBtn">
                         <span class="btn-text">
                             <i class="bi bi-download"></i>
-                            抓取案件清單
+                            <span id="fetchCasesText">抓取案件清單</span>
                         </span>
                         <span class="loading-spinner spinner-border spinner-border-sm" role="status" style="display: none;"></span>
                     </button>
+                    <div class="form-text mt-2" id="fetchCasesHint" style="display: none;">
+                        <i class="bi bi-info-circle"></i>
+                        點擊可重新向API抓取最新的案件清單
+                    </div>
                     
                     <!-- 案件清單顯示區 -->
                     <div id="caseListSection" style="display: none;" class="mt-3">
@@ -87,33 +91,7 @@
                         案件詳細資料與打卡訊息編輯
                     </h6>
                     
-                    <!-- 全域操作 -->
-                    <div class="mb-3">
-                        <div class="row">
-                            <div class="col-md-8">
-                                <label for="globalLogContent" class="form-label">全域工作日誌內容 (套用到所有案件)</label>
-                                <textarea class="form-control" id="globalLogContent" rows="3"
-                                    placeholder="輸入後點擊「套用到全部」可將此內容套用到所有案件"></textarea>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">&nbsp;</label>
-                                <div class="d-grid gap-2">
-                                    <button type="button" class="btn btn-outline-secondary" id="applyToAllBtn">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        套用到全部
-                                    </button>
-                                    <button type="button" class="btn btn-outline-warning" id="restoreAllBtn">
-                                        <i class="bi bi-arrow-counterclockwise"></i>
-                                        還原全部原始內容
-                                    </button>
-                                    <button type="button" class="btn btn-outline-danger" id="clearAllBtn">
-                                        <i class="bi bi-eraser"></i>
-                                        清空全部
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+
                     
                     <!-- 案件詳細資料列表 -->
                     <div id="caseDetailsContainer">
@@ -186,17 +164,40 @@
     document.addEventListener('DOMContentLoaded', function() {
         const savedUserId = getCookie('userId');
         const savedPassword = getCookie('password');
+        const savedCaseList = getCookie('caseList');
+        const savedCaseCount = getCookie('caseCount');
         
         if (savedUserId && savedPassword) {
             document.getElementById('userId').value = savedUserId;
             document.getElementById('password').value = savedPassword;
             document.getElementById('rememberMe').checked = true;
             
-            // 自動抓取案件清單
-            showToast('檢測到已儲存的帳號資訊，自動抓取案件清單中...', 'info');
-            setTimeout(() => {
-                fetchCases(true); // 傳入 true 表示自動執行
-            }, 1000);
+            // 檢查是否有已儲存的案件清單
+            if (savedCaseList && savedCaseCount) {
+                // 直接載入已儲存的案件清單
+                caseListData = savedCaseList;
+                document.getElementById('caseList').value = caseListData;
+                document.getElementById('caseCount').textContent = savedCaseCount;
+                document.getElementById('caseListSection').style.display = 'block';
+                document.getElementById('fetchDetailsBtn').disabled = false;
+                
+                // 更新按鈕文字為重新抓取
+                document.getElementById('fetchCasesText').textContent = '重新抓取案件清單';
+                document.getElementById('fetchCasesHint').style.display = 'block';
+                
+                showToast('檢測到已儲存的案件清單，自動載入詳細資料中...', 'info');
+                
+                // 自動載入詳細資料
+                setTimeout(() => {
+                    autoFetchCaseDetails();
+                }, 1000);
+            } else {
+                // 沒有案件清單，自動抓取
+                showToast('檢測到已儲存的帳號資訊，自動抓取案件清單中...', 'info');
+                setTimeout(() => {
+                    fetchCases(true); // 傳入 true 表示自動執行
+                }, 1000);
+            }
         }
     });
 
@@ -248,6 +249,14 @@
                 document.getElementById('caseListSection').style.display = 'block';
                 document.getElementById('fetchDetailsBtn').disabled = false;
                 
+                // 儲存案件清單到 cookie
+                setCookie('caseList', caseListData);
+                setCookie('caseCount', data.cases.length);
+                
+                // 更新按鈕文字為重新抓取
+                document.getElementById('fetchCasesText').textContent = '重新抓取案件清單';
+                document.getElementById('fetchCasesHint').style.display = 'block';
+                
                 showToast(data.message, 'success');
                 
                 if (isAutomatic) {
@@ -260,9 +269,13 @@
                 if (isAutomatic) {
                     deleteCookie('userId');
                     deleteCookie('password');
+                    deleteCookie('caseList');
+                    deleteCookie('caseCount');
                     document.getElementById('userId').value = '';
                     document.getElementById('password').value = '';
                     document.getElementById('rememberMe').checked = false;
+                    document.getElementById('fetchCasesText').textContent = '抓取案件清單';
+                    document.getElementById('fetchCasesHint').style.display = 'none';
                     showToast('已清除儲存的帳號資訊，請重新輸入', 'warning');
                 }
             }
@@ -270,6 +283,48 @@
             showToast('網路錯誤: ' + error.message, 'error');
         } finally {
             setButtonLoading(fetchBtn, false);
+        }
+    }
+
+    // 自動載入案件詳細資料
+    async function autoFetchCaseDetails() {
+        const userId = document.getElementById('userId').value.trim();
+        
+        if (!caseListData) {
+            showToast('案件清單資料遺失，請重新抓取', 'error');
+            return;
+        }
+        
+        try {
+            const formData = new FormData();
+            formData.append('user_id', userId);
+            formData.append('case_list', caseListData);
+            
+            const response = await fetch('/api/fetch-case-details', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                caseDetailsData = data.case_details;
+                displayCaseDetails(caseDetailsData);
+                document.getElementById('caseDetailsSection').style.display = 'block';
+                document.getElementById('startPunchBtn').disabled = false;
+                
+                showToast('案件詳細資料已自動載入完成', 'success');
+            } else {
+                showToast('自動載入失敗: ' + data.message, 'error');
+                // 如果自動載入失敗，清除相關 cookie
+                deleteCookie('caseList');
+                deleteCookie('caseCount');
+            }
+        } catch (error) {
+            showToast('自動載入詳細資料錯誤: ' + error.message, 'error');
+            // 如果自動載入失敗，清除相關 cookie
+            deleteCookie('caseList');
+            deleteCookie('caseCount');
         }
     }
 
@@ -405,47 +460,7 @@
         });
     }
 
-    // 套用全域工作日誌內容到所有案件
-    document.getElementById('applyToAllBtn').addEventListener('click', function() {
-        const globalContent = document.getElementById('globalLogContent').value.trim();
-        const editableLogInputs = document.querySelectorAll('.editable-log');
-        
-        if (!globalContent) {
-            showToast('請先輸入全域工作日誌內容', 'warning');
-            return;
-        }
-        
-        editableLogInputs.forEach(input => {
-            input.value = globalContent;
-        });
-        
-        showToast(`已套用到 ${editableLogInputs.length} 個案件`, 'success');
-    });
 
-    // 還原所有案件為原始內容
-    document.getElementById('restoreAllBtn').addEventListener('click', function() {
-        const editableLogInputs = document.querySelectorAll('.editable-log');
-        
-        editableLogInputs.forEach(input => {
-            const originalLog = input.dataset.originalLog;
-            input.value = originalLog;
-        });
-        
-        showToast(`已還原 ${editableLogInputs.length} 個案件為原始內容`, 'info');
-    });
-
-    // 清空所有工作日誌內容
-    document.getElementById('clearAllBtn').addEventListener('click', function() {
-        const editableLogInputs = document.querySelectorAll('.editable-log');
-        
-        editableLogInputs.forEach(input => {
-            input.value = '';
-        });
-        
-        document.getElementById('globalLogContent').value = '';
-        
-        showToast(`已清空 ${editableLogInputs.length} 個案件的工作日誌內容`, 'info');
-    });
 
     // 開始批量打卡
     document.getElementById('startPunchBtn').addEventListener('click', async function() {
