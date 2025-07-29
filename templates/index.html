@@ -259,8 +259,15 @@
                 
                 showToast(data.message, 'success');
                 
+                // 自動載入詳細資料
+                setTimeout(() => {
+                    autoFetchCaseDetails();
+                }, 1000);
+                
                 if (isAutomatic) {
-                    showToast('案件清單已自動載入，點擊「載入詳細資料」查看各案件內容', 'info');
+                    showToast('案件清單已自動載入，正在載入詳細資料...', 'info');
+                } else {
+                    showToast('案件清單載入成功，正在自動載入詳細資料...', 'info');
                 }
             } else {
                 showToast(data.message, 'error');
@@ -289,11 +296,15 @@
     // 自動載入案件詳細資料
     async function autoFetchCaseDetails() {
         const userId = document.getElementById('userId').value.trim();
+        const fetchDetailsBtn = document.getElementById('fetchDetailsBtn');
         
         if (!caseListData) {
             showToast('案件清單資料遺失，請重新抓取', 'error');
             return;
         }
+        
+        // 設定載入狀態
+        setButtonLoading(fetchDetailsBtn, true);
         
         try {
             const formData = new FormData();
@@ -325,6 +336,8 @@
             // 如果自動載入失敗，清除相關 cookie
             deleteCookie('caseList');
             deleteCookie('caseCount');
+        } finally {
+            setButtonLoading(fetchDetailsBtn, false);
         }
     }
 
@@ -396,6 +409,37 @@
                                 ${caseDetail.error}
                             </div>
                         ` : `
+                            <!-- 資料夾按鈕 -->
+                            ${caseDetail.f_dir ? `
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-outline-primary folder-btn" 
+                                        data-folder-path="${caseDetail.f_dir}"
+                                        title="左鍵：開啟 SharePoint 資料夾 | 右鍵：複製連結">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        開啟資料夾
+                                    </button>
+                                </div>
+                            ` : ''}
+                            
+                            <!-- 待辦事項編輯 -->
+                            <div class="mb-3">
+                                <label for="editableTodo_${index}" class="form-label">
+                                    <i class="bi bi-list-check"></i>
+                                    待辦事項 (可直接編輯)
+                                </label>
+                                <textarea class="form-control editable-todo" 
+                                    id="editableTodo_${index}" 
+                                    data-case-key="${caseDetail.case_key}"
+                                    data-original-todo="${caseDetail.f_to_do}"
+                                    rows="3" 
+                                    placeholder="請編輯此案件的待辦事項...">${caseDetail.f_to_do}</textarea>
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    您可以直接修改上方的待辦事項內容，打卡時會以修改後的內容更新記錄
+                                </div>
+                            </div>
+                            
+                            <!-- 工作日誌編輯 -->
                             <div class="mb-3">
                                 <label for="editableLog_${index}" class="form-label">
                                     <i class="bi bi-pencil-square"></i>
@@ -412,16 +456,27 @@
                                     您可以直接修改上方的工作日誌內容，打卡時會以修改後的內容覆蓋原有記錄
                                 </div>
                             </div>
+                            
                             <div class="mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-warning restore-todo-btn" 
+                                    data-target="editableTodo_${index}">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                    還原待辦事項
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-info clear-todo-btn" 
+                                    data-target="editableTodo_${index}">
+                                    <i class="bi bi-eraser"></i>
+                                    清空待辦事項
+                                </button>
                                 <button type="button" class="btn btn-sm btn-outline-warning restore-btn" 
                                     data-target="editableLog_${index}">
                                     <i class="bi bi-arrow-counterclockwise"></i>
-                                    還原原始內容
+                                    還原工作日誌
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline-info clear-btn" 
                                     data-target="editableLog_${index}">
                                     <i class="bi bi-eraser"></i>
-                                    清空內容
+                                    清空工作日誌
                                 </button>
                             </div>
                         `}
@@ -438,24 +493,110 @@
 
     // 綁定個別操作按鈕事件
     function bindIndividualButtons() {
-        // 還原按鈕
+        // 資料夾按鈕
+        document.querySelectorAll('.folder-btn').forEach(btn => {
+            // 左鍵點擊：開啟新分頁
+            btn.addEventListener('click', function() {
+                const folderUrl = this.dataset.folderPath;
+                if (folderUrl) {
+                    try {
+                        // 清理網址格式（移除前面的@符號如果有的話）
+                        let cleanUrl = folderUrl.trim();
+                        if (cleanUrl.startsWith('@')) {
+                            cleanUrl = cleanUrl.substring(1);
+                        }
+                        
+                        // 確保網址有協議頭
+                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                            cleanUrl = 'https://' + cleanUrl;
+                        }
+                        
+                        // 在新分頁開啟 SharePoint 連結
+                        window.open(cleanUrl, '_blank', 'noopener,noreferrer');
+                        showToast('已在新分頁開啟 SharePoint 資料夾', 'success');
+                        
+                    } catch (error) {
+                        showToast('開啟資料夾連結時發生錯誤', 'error');
+                        console.error('Error opening folder link:', error);
+                    }
+                } else {
+                    showToast('沒有設定資料夾連結', 'warning');
+                }
+            });
+            
+            // 右鍵點擊：複製連結
+            btn.addEventListener('contextmenu', function(e) {
+                e.preventDefault(); // 防止顯示預設右鍵選單
+                
+                const folderUrl = this.dataset.folderPath;
+                if (folderUrl) {
+                    try {
+                        // 清理網址格式
+                        let cleanUrl = folderUrl.trim();
+                        if (cleanUrl.startsWith('@')) {
+                            cleanUrl = cleanUrl.substring(1);
+                        }
+                        
+                        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                            cleanUrl = 'https://' + cleanUrl;
+                        }
+                        
+                        // 複製到剪貼簿
+                        navigator.clipboard.writeText(cleanUrl).then(() => {
+                            showToast('SharePoint 連結已複製到剪貼簿', 'success');
+                        }).catch(() => {
+                            showToast('無法複製連結', 'error');
+                        });
+                        
+                    } catch (error) {
+                        showToast('複製連結時發生錯誤', 'error');
+                        console.error('Error copying folder link:', error);
+                    }
+                } else {
+                    showToast('沒有可複製的連結', 'warning');
+                }
+            });
+        });
+        
+        // 待辦事項還原按鈕
+        document.querySelectorAll('.restore-todo-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const targetId = this.dataset.target;
+                const textarea = document.getElementById(targetId);
+                const originalTodo = textarea.dataset.originalTodo;
+                textarea.value = originalTodo;
+                showToast('已還原為原始待辦事項', 'info');
+            });
+        });
+        
+        // 待辦事項清空按鈕
+        document.querySelectorAll('.clear-todo-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const targetId = this.dataset.target;
+                const textarea = document.getElementById(targetId);
+                textarea.value = '';
+                showToast('已清空待辦事項', 'info');
+            });
+        });
+        
+        // 工作日誌還原按鈕
         document.querySelectorAll('.restore-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const targetId = this.dataset.target;
                 const textarea = document.getElementById(targetId);
                 const originalLog = textarea.dataset.originalLog;
                 textarea.value = originalLog;
-                showToast('已還原為原始內容', 'info');
+                showToast('已還原為原始工作日誌', 'info');
             });
         });
         
-        // 清空按鈕
+        // 工作日誌清空按鈕
         document.querySelectorAll('.clear-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const targetId = this.dataset.target;
                 const textarea = document.getElementById(targetId);
                 textarea.value = '';
-                showToast('已清空內容', 'info');
+                showToast('已清空工作日誌', 'info');
             });
         });
     }
@@ -471,17 +612,42 @@
             return;
         }
         
-        // 收集所有案件的工作日誌內容
+        // 收集所有案件的工作日誌和待辦事項內容
         const punchData = [];
         const editableLogInputs = document.querySelectorAll('.editable-log');
+        const editableTodoInputs = document.querySelectorAll('.editable-todo');
         
+        // 建立案件資料對應表
+        const caseDataMap = {};
+        
+        // 收集工作日誌內容
         editableLogInputs.forEach(input => {
             const caseKey = input.dataset.caseKey;
             const editedLogContent = input.value.trim();
             
+            if (!caseDataMap[caseKey]) {
+                caseDataMap[caseKey] = {};
+            }
+            caseDataMap[caseKey].edited_log_content = editedLogContent;
+        });
+        
+        // 收集待辦事項內容
+        editableTodoInputs.forEach(input => {
+            const caseKey = input.dataset.caseKey;
+            const editedTodoContent = input.value.trim();
+            
+            if (!caseDataMap[caseKey]) {
+                caseDataMap[caseKey] = {};
+            }
+            caseDataMap[caseKey].edited_todo_content = editedTodoContent;
+        });
+        
+        // 轉換為陣列格式
+        Object.keys(caseDataMap).forEach(caseKey => {
             punchData.push({
                 case_key: caseKey,
-                edited_log_content: editedLogContent
+                edited_log_content: caseDataMap[caseKey].edited_log_content || '',
+                edited_todo_content: caseDataMap[caseKey].edited_todo_content || ''
             });
         });
         
@@ -570,6 +736,7 @@
                         </div>
                         <small class="text-muted">${result.message}</small>
                         ${result.log_content ? `<br><small class="text-info">日誌內容: ${result.log_content}</small>` : ''}
+                        ${result.todo_content ? `<br><small class="text-warning">待辦事項: ${result.todo_content}</small>` : ''}
                     </div>
                 </div>
             `;

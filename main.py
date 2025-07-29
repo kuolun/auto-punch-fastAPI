@@ -24,7 +24,7 @@ app = FastAPI(
 )
 
 # 靜態檔案和模板
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # API 基礎網址
@@ -174,6 +174,45 @@ def extract_fields_with_custom_log(doc, today: str, user_id: str, custom_log_con
     
     return payload
 
+def extract_fields_with_custom_data(doc, today: str, user_id: str, custom_log_content: str, custom_todo_content: str = None):
+    """從案件編輯頁面提取欄位資料並使用自定義log和待辦事項內容"""
+    field_ids = [
+        "f_key", "f_case_name", "f_person_id", "f_person2_id",
+        "f_event_date", "f_alert_date", "f_log", "f_note",
+        "f_to_do", "f_dir", "f_risk", "f_doc"
+    ]
+    
+    payload = {}
+    for fid in field_ids:
+        el = doc.find(id=fid)
+        if not el:
+            payload[fid] = ""
+        elif el.name == "input":
+            payload[fid] = el.get("value", "").strip()
+        elif el.name == "textarea":
+            payload[fid] = el.text.strip()
+        else:
+            payload[fid] = ""
+    
+    # 轉換 f_key 為整數
+    try:
+        payload["f_key"] = int(payload["f_key"])
+    except (ValueError, TypeError):
+        payload["f_key"] = 0
+    
+    # 使用自定義的工作日誌內容
+    payload["f_log"] = custom_log_content
+    
+    # 使用自定義的待辦事項內容（如果有提供）
+    if custom_todo_content is not None:
+        payload["f_to_do"] = custom_todo_content
+    
+    # 設定更新資訊
+    payload["f_update_date"] = today
+    payload["f_last_editor"] = user_id
+    
+    return payload
+
 async def submit_punch(payload):
     """提交打卡資料"""
     try:
@@ -261,6 +300,8 @@ async def fetch_case_details(
                             "case_name": "無法取得",
                             "current_log": "",
                             "person_id": "",
+                            "f_dir": "",
+                            "f_to_do": "",
                             "error": "無法取得案件資料"
                         }
                     
@@ -277,12 +318,32 @@ async def fetch_case_details(
                     f_key_el = doc.find(id="f_key")
                     f_key = f_key_el.get("value", "").strip() if f_key_el else ""
                     
+                    # 提取 f_dir (資料夾路徑)
+                    f_dir_el = doc.find(id="f_dir")
+                    f_dir = ""
+                    if f_dir_el:
+                        if f_dir_el.name == "input":
+                            f_dir = f_dir_el.get("value", "").strip()
+                        elif f_dir_el.name == "textarea":
+                            f_dir = f_dir_el.text.strip()
+                    
+                    # 提取 f_to_do (待辦事項)
+                    f_to_do_el = doc.find(id="f_to_do")
+                    f_to_do = ""
+                    if f_to_do_el:
+                        if f_to_do_el.name == "input":
+                            f_to_do = f_to_do_el.get("value", "").strip()
+                        elif f_to_do_el.name == "textarea":
+                            f_to_do = f_to_do_el.text.strip()
+                    
                     return {
                         "case_key": case_key,
                         "case_name": case_name,
                         "current_log": current_log,
                         "person_id": person_id,
                         "f_key": f_key,
+                        "f_dir": f_dir,
+                        "f_to_do": f_to_do,
                         "error": None
                     }
                     
@@ -293,6 +354,8 @@ async def fetch_case_details(
                         "case_name": "錯誤",
                         "current_log": "",
                         "person_id": "",
+                        "f_dir": "",
+                        "f_to_do": "",
                         "error": str(e)
                     }
         
@@ -350,6 +413,7 @@ async def batch_punch(
             async with semaphore:
                 case_key = case_info.get("case_key")
                 edited_log_content = case_info.get("edited_log_content", "")
+                edited_todo_content = case_info.get("edited_todo_content", None)
                 
                 try:
                     # 取得案件資料
@@ -361,27 +425,35 @@ async def batch_punch(
                             "message": "無法取得案件資料"
                         }
                     
-                    # 提取欄位資料並使用編輯後的log內容
-                    payload = extract_fields_with_custom_log(doc, today, user_id, edited_log_content)
+                    # 提取欄位資料並使用編輯後的log和待辦事項內容
+                    payload = extract_fields_with_custom_data(doc, today, user_id, edited_log_content, edited_todo_content)
                     case_name = payload.get('f_case_name', '未知')
                     
                     # 提交打卡資料
                     result = await submit_punch(payload)
                     
                     if result:
+                        message_parts = [f"案件 {case_name}"]
+                        if edited_log_content:
+                            message_parts.append("工作日誌")
+                        if edited_todo_content is not None:
+                            message_parts.append("待辦事項")
+                        message_parts.append("更新成功")
+                        
                         return {
                             "success": True,
                             "case_key": case_key,
                             "case_name": case_name,
-                            "message": f"案件 {case_name} 工作日誌更新成功",
-                            "log_content": edited_log_content[:50] + "..." if len(edited_log_content) > 50 else edited_log_content
+                            "message": " ".join(message_parts),
+                            "log_content": edited_log_content[:50] + "..." if len(edited_log_content) > 50 else edited_log_content,
+                            "todo_content": edited_todo_content[:30] + "..." if edited_todo_content and len(edited_todo_content) > 30 else edited_todo_content
                         }
                     else:
                         return {
                             "success": False,
                             "case_key": case_key,
                             "case_name": case_name,
-                            "message": f"案件 {case_name} 工作日誌更新失敗"
+                            "message": f"案件 {case_name} 更新失敗"
                         }
                         
                 except Exception as e:
@@ -431,4 +503,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
