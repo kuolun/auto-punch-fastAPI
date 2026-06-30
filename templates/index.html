@@ -431,7 +431,7 @@
                                     id="editableTodo_${index}" 
                                     data-case-key="${caseDetail.case_key}"
                                     data-original-todo="${caseDetail.f_to_do}"
-                                    rows="3" 
+                                    rows="8"
                                     placeholder="請編輯此案件的待辦事項...">${caseDetail.f_to_do}</textarea>
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
@@ -449,7 +449,7 @@
                                     id="editableLog_${index}" 
                                     data-case-key="${caseDetail.case_key}"
                                     data-original-log="${caseDetail.current_log}"
-                                    rows="4" 
+                                    rows="12"
                                     placeholder="請編輯此案件的工作日誌內容...">${caseDetail.current_log}</textarea>
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
@@ -486,9 +486,18 @@
         });
         
         container.innerHTML = html;
-        
+
         // 綁定個別操作按鈕事件
         bindIndividualButtons();
+
+        // 預設將待辦事項與工作日誌捲動到最底，方便直接看到最新內容。
+        // 用 requestAnimationFrame 延到呼叫端把區塊設成 display:block、版面計算完成後才捲動，
+        // 否則容器仍是 display:none 時 scrollHeight 為 0，捲動不會生效。
+        requestAnimationFrame(() => {
+            document.querySelectorAll('.editable-todo, .editable-log').forEach(ta => {
+                ta.scrollTop = ta.scrollHeight;
+            });
+        });
     }
 
     // 綁定個別操作按鈕事件
