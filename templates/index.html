@@ -420,93 +420,69 @@
             
             html += `
                 <div class="card mb-3 ${cardClass}">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div>
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="section-toggle flex-grow-1" data-bs-toggle="collapse" data-bs-target="#caseBody_${index}" role="button" aria-expanded="true" aria-controls="caseBody_${index}">
+                            <i class="bi bi-chevron-down toggle-icon"></i>
                             <strong>案件 ${caseDetail.case_key}</strong> - ${caseDetail.case_name}
                             ${caseDetail.person_id ? `<small class="text-muted">(負責人: ${caseDetail.person_id})</small>` : ''}
                         </div>
-                        <span class="badge ${hasError ? 'bg-danger' : 'bg-success'}">
-                            ${hasError ? '載入失敗' : '載入成功'}
-                        </span>
-                    </div>
-                    <div class="card-body">
-                        ${hasError ? `
-                            <div class="alert alert-danger">
-                                <i class="bi bi-exclamation-triangle"></i>
-                                ${caseDetail.error}
-                            </div>
-                        ` : `
-                            <!-- 資料夾按鈕 -->
-                            ${caseDetail.f_dir ? `
-                                <div class="mb-3">
-                                    <button type="button" class="btn btn-outline-primary folder-btn" 
-                                        data-folder-path="${caseDetail.f_dir}"
-                                        title="左鍵：開啟 SharePoint 資料夾 | 右鍵：複製連結">
-                                        <i class="bi bi-box-arrow-up-right"></i>
-                                        開啟資料夾
-                                    </button>
-                                </div>
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            ${!hasError && caseDetail.f_dir ? `
+                                <button type="button" class="btn btn-sm btn-outline-primary folder-btn text-nowrap"
+                                    data-folder-path="${caseDetail.f_dir}"
+                                    title="左鍵：開啟 SharePoint 資料夾 | 右鍵：複製連結">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                    開啟資料夾
+                                </button>
                             ` : ''}
-                            
-                            <!-- 待辦事項編輯 -->
-                            <div class="mb-3">
-                                <label for="editableTodo_${index}" class="form-label">
-                                    <i class="bi bi-list-check"></i>
-                                    待辦事項 (可直接編輯)
-                                </label>
-                                <textarea class="form-control editable-todo"
-                                    id="editableTodo_${index}"
-                                    data-case-key="${caseDetail.case_key}"
-                                    data-original-todo="${caseDetail.f_to_do}"
-                                    rows="2"
-                                    placeholder="請編輯此案件的待辦事項...">${caseDetail.f_to_do}</textarea>
-                                <div class="form-text">
-                                    <i class="bi bi-info-circle"></i>
-                                    您可以直接修改上方的待辦事項內容，打卡時會以修改後的內容更新記錄
+                            <span class="badge ${hasError ? 'bg-danger' : 'bg-success'}">
+                                ${hasError ? '載入失敗' : '載入成功'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="collapse show" id="caseBody_${index}">
+                        <div class="card-body">
+                            ${hasError ? `
+                                <div class="alert alert-danger">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                    ${caseDetail.error}
                                 </div>
-                            </div>
-                            
-                            <!-- 工作日誌編輯 -->
-                            <div class="mb-3">
-                                <label for="editableLog_${index}" class="form-label">
-                                    <i class="bi bi-pencil-square"></i>
-                                    工作日誌內容 (可直接編輯)
-                                </label>
-                                <textarea class="form-control editable-log"
-                                    id="editableLog_${index}"
-                                    data-case-key="${caseDetail.case_key}"
-                                    data-original-log="${caseDetail.current_log}"
-                                    rows="2"
-                                    placeholder="請編輯此案件的工作日誌內容...">${caseDetail.current_log}</textarea>
-                                <div class="form-text">
-                                    <i class="bi bi-info-circle"></i>
-                                    您可以直接修改上方的工作日誌內容，打卡時會以修改後的內容覆蓋原有記錄
+                            ` : `
+                                <!-- 待辦事項編輯 -->
+                                <div class="mb-3">
+                                    <label for="editableTodo_${index}" class="form-label">
+                                        <i class="bi bi-list-check"></i>
+                                        待辦事項 (可直接編輯)
+                                    </label>
+                                    <textarea class="form-control editable-todo"
+                                        id="editableTodo_${index}"
+                                        data-case-key="${caseDetail.case_key}"
+                                        rows="2"
+                                        placeholder="請編輯此案件的待辦事項...">${caseDetail.f_to_do}</textarea>
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle"></i>
+                                        您可以直接修改上方的待辦事項內容，打卡時會以修改後的內容更新記錄
+                                    </div>
                                 </div>
-                            </div>
-                            
-                            <div class="mb-2">
-                                <button type="button" class="btn btn-sm btn-outline-warning restore-todo-btn" 
-                                    data-target="editableTodo_${index}">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                    還原待辦事項
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-info clear-todo-btn" 
-                                    data-target="editableTodo_${index}">
-                                    <i class="bi bi-eraser"></i>
-                                    清空待辦事項
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-warning restore-btn" 
-                                    data-target="editableLog_${index}">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                    還原工作日誌
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-info clear-btn" 
-                                    data-target="editableLog_${index}">
-                                    <i class="bi bi-eraser"></i>
-                                    清空工作日誌
-                                </button>
-                            </div>
-                        `}
+
+                                <!-- 工作日誌編輯 -->
+                                <div class="mb-3">
+                                    <label for="editableLog_${index}" class="form-label">
+                                        <i class="bi bi-pencil-square"></i>
+                                        工作日誌內容 (可直接編輯)
+                                    </label>
+                                    <textarea class="form-control editable-log"
+                                        id="editableLog_${index}"
+                                        data-case-key="${caseDetail.case_key}"
+                                        rows="2"
+                                        placeholder="請編輯此案件的工作日誌內容...">${caseDetail.current_log}</textarea>
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle"></i>
+                                        您可以直接修改上方的工作日誌內容，打卡時會以修改後的內容覆蓋原有記錄
+                                    </div>
+                                </div>
+                            `}
+                        </div>
                     </div>
                 </div>
             `;
@@ -584,7 +560,6 @@
             // 右鍵點擊：複製連結
             btn.addEventListener('contextmenu', function(e) {
                 e.preventDefault(); // 防止顯示預設右鍵選單
-                
                 const folderUrl = this.dataset.folderPath;
                 if (folderUrl) {
                     try {
@@ -612,52 +587,6 @@
                 } else {
                     showToast('沒有可複製的連結', 'warning');
                 }
-            });
-        });
-        
-        // 待辦事項還原按鈕
-        document.querySelectorAll('.restore-todo-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const targetId = this.dataset.target;
-                const textarea = document.getElementById(targetId);
-                const originalTodo = textarea.dataset.originalTodo;
-                textarea.value = originalTodo;
-                autoResizeTextarea(textarea);
-                showToast('已還原為原始待辦事項', 'info');
-            });
-        });
-        
-        // 待辦事項清空按鈕
-        document.querySelectorAll('.clear-todo-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const targetId = this.dataset.target;
-                const textarea = document.getElementById(targetId);
-                textarea.value = '';
-                autoResizeTextarea(textarea);
-                showToast('已清空待辦事項', 'info');
-            });
-        });
-        
-        // 工作日誌還原按鈕
-        document.querySelectorAll('.restore-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const targetId = this.dataset.target;
-                const textarea = document.getElementById(targetId);
-                const originalLog = textarea.dataset.originalLog;
-                textarea.value = originalLog;
-                autoResizeTextarea(textarea);
-                showToast('已還原為原始工作日誌', 'info');
-            });
-        });
-        
-        // 工作日誌清空按鈕
-        document.querySelectorAll('.clear-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const targetId = this.dataset.target;
-                const textarea = document.getElementById(targetId);
-                textarea.value = '';
-                autoResizeTextarea(textarea);
-                showToast('已清空工作日誌', 'info');
             });
         });
     }
