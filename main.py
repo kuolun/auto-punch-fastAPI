@@ -238,7 +238,7 @@ async def submit_punch(payload):
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
     """主頁面"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 # ===== API路由 =====
 
