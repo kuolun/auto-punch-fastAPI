@@ -427,11 +427,11 @@
                                     <i class="bi bi-list-check"></i>
                                     待辦事項 (可直接編輯)
                                 </label>
-                                <textarea class="form-control editable-todo" 
-                                    id="editableTodo_${index}" 
+                                <textarea class="form-control editable-todo"
+                                    id="editableTodo_${index}"
                                     data-case-key="${caseDetail.case_key}"
                                     data-original-todo="${caseDetail.f_to_do}"
-                                    rows="8"
+                                    rows="2"
                                     placeholder="請編輯此案件的待辦事項...">${caseDetail.f_to_do}</textarea>
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
@@ -445,11 +445,11 @@
                                     <i class="bi bi-pencil-square"></i>
                                     工作日誌內容 (可直接編輯)
                                 </label>
-                                <textarea class="form-control editable-log" 
-                                    id="editableLog_${index}" 
+                                <textarea class="form-control editable-log"
+                                    id="editableLog_${index}"
                                     data-case-key="${caseDetail.case_key}"
                                     data-original-log="${caseDetail.current_log}"
-                                    rows="12"
+                                    rows="2"
                                     placeholder="請編輯此案件的工作日誌內容...">${caseDetail.current_log}</textarea>
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
@@ -490,18 +490,39 @@
         // 綁定個別操作按鈕事件
         bindIndividualButtons();
 
-        // 預設將待辦事項與工作日誌捲動到最底，方便直接看到最新內容。
-        // 用 requestAnimationFrame 延到呼叫端把區塊設成 display:block、版面計算完成後才捲動，
-        // 否則容器仍是 display:none 時 scrollHeight 為 0，捲動不會生效。
+        // 依內容多寡自動調整待辦事項/工作日誌的高度：沒內容或只有一行就不佔大空間。
+        // 用 requestAnimationFrame 延到呼叫端把區塊設成 display:block、版面計算完成後才量得到正確高度，
+        // 否則容器仍是 display:none 時 scrollHeight 為 0，量出來的高度會不準。
         requestAnimationFrame(() => {
             document.querySelectorAll('.editable-todo, .editable-log').forEach(ta => {
-                ta.scrollTop = ta.scrollHeight;
+                autoResizeTextarea(ta);
+                ta.scrollTop = ta.scrollHeight; // 超過高度上限、變成可捲動時，預設看到最新內容
             });
         });
     }
 
+    // 待辦事項/工作日誌 textarea 高度上下限（px）
+    const EDITABLE_TEXTAREA_MIN_HEIGHT = 60;
+    const EDITABLE_TEXTAREA_MAX_HEIGHT = 400;
+
+    // 依內容實際高度自動調整 textarea 高度，介於上限與下限之間，超出上限則改為可捲動
+    function autoResizeTextarea(textarea) {
+        textarea.style.height = 'auto';
+        const fitHeight = Math.min(
+            Math.max(textarea.scrollHeight, EDITABLE_TEXTAREA_MIN_HEIGHT),
+            EDITABLE_TEXTAREA_MAX_HEIGHT
+        );
+        textarea.style.height = fitHeight + 'px';
+        textarea.style.overflowY = textarea.scrollHeight > EDITABLE_TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+    }
+
     // 綁定個別操作按鈕事件
     function bindIndividualButtons() {
+        // 待辦事項/工作日誌輸入時即時調整高度
+        document.querySelectorAll('.editable-todo, .editable-log').forEach(ta => {
+            ta.addEventListener('input', () => autoResizeTextarea(ta));
+        });
+
         // 資料夾按鈕
         document.querySelectorAll('.folder-btn').forEach(btn => {
             // 左鍵點擊：開啟新分頁
@@ -574,6 +595,7 @@
                 const textarea = document.getElementById(targetId);
                 const originalTodo = textarea.dataset.originalTodo;
                 textarea.value = originalTodo;
+                autoResizeTextarea(textarea);
                 showToast('已還原為原始待辦事項', 'info');
             });
         });
@@ -584,6 +606,7 @@
                 const targetId = this.dataset.target;
                 const textarea = document.getElementById(targetId);
                 textarea.value = '';
+                autoResizeTextarea(textarea);
                 showToast('已清空待辦事項', 'info');
             });
         });
@@ -595,6 +618,7 @@
                 const textarea = document.getElementById(targetId);
                 const originalLog = textarea.dataset.originalLog;
                 textarea.value = originalLog;
+                autoResizeTextarea(textarea);
                 showToast('已還原為原始工作日誌', 'info');
             });
         });
@@ -605,6 +629,7 @@
                 const targetId = this.dataset.target;
                 const textarea = document.getElementById(targetId);
                 textarea.value = '';
+                autoResizeTextarea(textarea);
                 showToast('已清空工作日誌', 'info');
             });
         });
